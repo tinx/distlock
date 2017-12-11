@@ -14,8 +14,16 @@ func main() {
 
     flag.Parse()
 
+    if *lock_name == "" {
+        fmt.Fprintln(os.Stderr, "'lock-name' is a required option.")
+        os.Exit(1)
+    }
     if *op_lock && *op_unlock {
         fmt.Fprintln(os.Stderr, "Can't give both 'lock' and 'unlock' options.")
+        os.Exit(1)
+    }
+    if (*op_lock || *op_unlock) && flag.NArg() > 0 {
+        fmt.Fprintln(os.Stderr, "Program args given, but would not execute.")
         os.Exit(1)
     }
 
@@ -23,4 +31,5 @@ func main() {
     fmt.Println("op_lock:", *op_lock)
     fmt.Println("op_unlock:", *op_unlock)
     fmt.Println("reason:", *reason)
+    fmt.Println("command:", flag.Args())
 }
