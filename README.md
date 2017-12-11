@@ -34,7 +34,7 @@ As an alternative, distlock can be used to perform the locking steps
 individually:
 
 ```sh
-# distlock --lock-name=percona_prod --lock --why="Upgrade RPMs"
+# distlock --lock-name=percona_prod --lock --reason="Upgrade RPMs"
 # yum -y upgrade
 # distlock --lock-name=percona_prod --unlock
 ```
