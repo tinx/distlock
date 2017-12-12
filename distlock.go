@@ -11,6 +11,8 @@ func main() {
     op_lock := flag.Bool("lock", false, "Acquire lock and exit")
     op_unlock := flag.Bool("unlock", false, "Release lock and exit")
     reason := flag.String("reason", "", "Reason why we perform this operation")
+    no_wait := flag.Bool("nowait", false, "Fail if the lock is busy")
+    timeout := flag.Int("timeout", -1, "Max. no. of secs to wait for the lock")
 
     flag.Parse()
 
@@ -26,10 +28,19 @@ func main() {
         fmt.Fprintln(os.Stderr, "Program args given, but would not execute.")
         os.Exit(1)
     }
+    if *no_wait {
+        if *timeout > 0 {
+            fmt.Fprintln(os.Stderr, "Conflicting options -nowait and -timeout.")
+            os.Exit(1)
+	} else {
+            *timeout = 0
+        }
+    }
 
     fmt.Println("lock_name:", *lock_name)
     fmt.Println("op_lock:", *op_lock)
     fmt.Println("op_unlock:", *op_unlock)
     fmt.Println("reason:", *reason)
+    fmt.Println("timeout:", *timeout)
     fmt.Println("command:", flag.Args())
 }
