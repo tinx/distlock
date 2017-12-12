@@ -6,6 +6,18 @@ import (
     "os"
 )
 
+func perform_unlock(lock_name string) {
+    return
+}
+
+func perform_lock(lock_name string, reason string, timeout int) {
+    return
+}
+
+func perform_command() int {
+    return 0
+}
+
 func main() {
     lock_name := flag.String("lock-name", "", "Name of the lock to operate on")
     op_lock := flag.Bool("lock", false, "Acquire lock and exit")
@@ -36,11 +48,23 @@ func main() {
             *timeout = 0
         }
     }
+    if !*op_lock && !*op_unlock && flag.NArg() == 0 {
+            fmt.Fprintln(os.Stderr, "Missing command to protect with lock")
+            os.Exit(1)
+    }
 
-    fmt.Println("lock_name:", *lock_name)
-    fmt.Println("op_lock:", *op_lock)
-    fmt.Println("op_unlock:", *op_unlock)
-    fmt.Println("reason:", *reason)
-    fmt.Println("timeout:", *timeout)
-    fmt.Println("command:", flag.Args())
+    if *op_unlock {
+        perform_unlock(*lock_name)
+        os.Exit(0)
+    } else {
+        perform_lock(*lock_name, *reason, *timeout)
+        if *op_lock {
+            /* we're done */
+            os.Exit(0)
+        } else {
+            rc := perform_command()
+            perform_unlock(*lock_name)
+            os.Exit(rc)
+        }
+    }
 }
