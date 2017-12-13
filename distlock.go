@@ -2,10 +2,10 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
+	"log"
 )
 
 func perform_unlock(lock_name string) {
@@ -23,8 +23,7 @@ func perform_command() int {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		fmt.Fprintln(os.Stderr, "distlock: cmd execution failed: ", err)
-		return 2
+		log.Fatal("distlock: cmd execution failed: ", err)
 	}
 	if err := cmd.Wait(); err != nil {
 		if exiterr, ok := err.(*exec.ExitError); ok {
@@ -34,18 +33,18 @@ func perform_command() int {
 				/* status is type asserted to be a WaitStatus */
 				return status.ExitStatus()
 			} else {
-				fmt.Println("distlock: unexpected WaitStatus")
-				return 2
+				log.Fatal("distlock: unexpected WaitStatus")
 			}
 		} else {
-			fmt.Println("distlock: unexpected ExitError")
-			return 2
+			log.Fatal("distlock: unexpected ExitError")
 		}
 	}
 	return 0
 }
 
 func main() {
+	log.SetFlags(0)
+
 	lock_name := flag.String("lock-name", "",
 		"Name of the lock to operate on")
 	op_lock := flag.Bool("lock", false, "Acquire lock and exit")
@@ -59,31 +58,23 @@ func main() {
 	flag.Parse()
 
 	if *lock_name == "" {
-		fmt.Fprintln(os.Stderr, "'lock-name' is a required option.")
-		os.Exit(1)
+		log.Fatal("'lock-name' is a required option.")
 	}
 	if *op_lock && *op_unlock {
-		fmt.Fprintln(os.Stderr,
-			"Can't give both 'lock' and 'unlock' options.")
-		os.Exit(1)
+		log.Fatal("Can't give both 'lock' and 'unlock' options.")
 	}
 	if (*op_lock || *op_unlock) && flag.NArg() > 0 {
-		fmt.Fprintln(os.Stderr,
-			"Program args given, but would not execute.")
-		os.Exit(1)
+		log.Fatal("Program args given, but would not execute.")
 	}
 	if *no_wait {
 		if *timeout > 0 {
-			fmt.Fprintln(os.Stderr,
-				"Conflicting options -nowait and -timeout.")
-			os.Exit(1)
+			log.Fatal("Conflicting options -nowait and -timeout.")
 		} else {
 			*timeout = 0
 		}
 	}
 	if !*op_lock && !*op_unlock && flag.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "Missing command to protect with lock")
-		os.Exit(1)
+		log.Fatal("Missing command to protect with lock")
 	}
 
 	if *op_unlock {
