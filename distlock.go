@@ -3,17 +3,18 @@ package main
 import (
 	"context"
 	"flag"
-	"github.com/coreos/etcd/client"
+	v3 "github.com/coreos/etcd/clientv3"
 	"log"
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 )
 
-func init_etcd_client() client.Client {
-	c, err := client.New(client.Config{
-		Endpoints: []string{"http://127.0.0.1:2379"},
-		Transport: client.DefaultTransport,
+func init_etcd_client() *v3.Client {
+	c, err := v3.New(v3.Config{
+		Endpoints:   []string{"http://127.0.0.1:2379"},
+		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
 		log.Fatal("can't connect to etcd:", err)
@@ -23,9 +24,9 @@ func init_etcd_client() client.Client {
 
 func perform_unlock(lock_name string) {
 	c := init_etcd_client()
-	kapi := client.NewKeysAPI(c)
-	o := client.SetOptions{Dir: true}
-	resp, err := kapi.Set(context.Background(), "/myNodes", "", &o)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	resp, err := c.Put(ctx, "/myNodes", "")
+	cancel()
 	if err != nil {
 		log.Fatal(err)
 	}
