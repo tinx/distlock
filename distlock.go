@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	v3 "github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3/concurrency"
 	"log"
 	"os"
 	"os/exec"
@@ -28,16 +29,38 @@ func finish_etcd_client(c *v3.Client) {
 
 func perform_unlock(c *v3.Client, lock_name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	resp, err := c.Put(ctx, "/myNodes", "")
-	cancel()
+	s, err := concurrency.NewSession(c)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("couldn't init session:", err)
 	}
-	log.Fatal("etcd response: ", resp)
+	defer s.Close()
+	m := concurrency.NewMutex(s, "/distlock/"+lock_name)
+	if err := m.Unlock(ctx); err != nil {
+		log.Fatal("couldn't free lock:", err)
+	}
+	cancel()
 	return
 }
 
 func perform_lock(c *v3.Client, lock_name string, reason string, timeout int) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if timeout <= 0 {
+		ctx, cancel = context.WithCancel(context.Background())
+	} else {
+		ctx, cancel = context.WithTimeout(context.Background(),
+			time.Duration(timeout)*time.Second)
+	}
+	s, err := concurrency.NewSession(c)
+	if err != nil {
+		log.Fatal("couldn't init session:", err)
+	}
+	defer s.Close()
+	m := concurrency.NewMutex(s, "/distlock/"+lock_name)
+	if err := m.Lock(ctx); err != nil {
+		log.Fatal("couldn't acquire lock:", err)
+	}
+	cancel()
 	return
 }
 
