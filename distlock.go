@@ -22,8 +22,11 @@ func init_etcd_client() *v3.Client {
 	return c
 }
 
-func perform_unlock(lock_name string) {
-	c := init_etcd_client()
+func finish_etcd_client(c *v3.Client) {
+	c.Close()
+}
+
+func perform_unlock(c *v3.Client, lock_name string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	resp, err := c.Put(ctx, "/myNodes", "")
 	cancel()
@@ -34,7 +37,7 @@ func perform_unlock(lock_name string) {
 	return
 }
 
-func perform_lock(lock_name string, reason string, timeout int) {
+func perform_lock(c *v3.Client, lock_name string, reason string, timeout int) {
 	return
 }
 
@@ -99,17 +102,20 @@ func main() {
 		log.Fatal("Missing command to protect with lock")
 	}
 
+	c := init_etcd_client()
+	defer finish_etcd_client(c)
+
 	if *op_unlock {
-		perform_unlock(*lock_name)
+		perform_unlock(c, *lock_name)
 		os.Exit(0)
 	} else {
-		perform_lock(*lock_name, *reason, *timeout)
+		perform_lock(c, *lock_name, *reason, *timeout)
 		if *op_lock {
 			/* we're done */
 			os.Exit(0)
 		} else {
 			rc := perform_command()
-			perform_unlock(*lock_name)
+			perform_unlock(c, *lock_name)
 			os.Exit(rc)
 		}
 	}
