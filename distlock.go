@@ -89,11 +89,14 @@ func main() {
 
 	lock_name := flag.String("lock-name", "",
 		"Name of the lock to operate on")
-	op_lock := flag.Bool("lock", false, "Acquire lock and exit")
-	op_unlock := flag.Bool("unlock", false, "Release lock and exit")
+	op_lock := flag.Bool("lock", false,
+		"Acquire lock and exit")
+	op_unlock := flag.Bool("unlock", false,
+		"Release lock and exit")
 	reason := flag.String("reason", "",
 		"Reason why we perform this operation")
-	no_wait := flag.Bool("nowait", false, "Fail if the lock is busy")
+	no_wait := flag.Bool("nowait", false,
+		"Fail if the lock is busy")
 	timeout := flag.Int("timeout", -1,
 		"Max. no. of secs to wait for the lock")
 
