@@ -28,7 +28,8 @@ func init_etcd_client(lock_name string) (*v3.Client, *concurrency.Session, *conc
 	return client, session, mutex
 }
 
-func finish_etcd_client(client *v3.Client) {
+func finish_etcd_client(client *v3.Client, session *concurrency.Session) {
+	session.Close()
 	client.Close()
 }
 
@@ -119,8 +120,7 @@ func main() {
 	}
 
 	client, session, mutex := init_etcd_client(*lock_name)
-	defer session.Close()
-	defer finish_etcd_client(client)
+	defer finish_etcd_client(client, session)
 
 	if *op_unlock {
 		perform_unlock(mutex)
