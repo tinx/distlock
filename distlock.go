@@ -12,37 +12,36 @@ import (
 	"time"
 )
 
-func init_etcd_client() *v3.Client {
-	c, err := v3.New(v3.Config{
+func init_etcd_client(lock_name string) (*v3.Client, *concurrency.Session, *concurrency.Mutex) {
+	client, err := v3.New(v3.Config{
 		Endpoints:   []string{"http://127.0.0.1:2379"},
 		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
 		log.Fatal("can't connect to etcd:", err)
 	}
-	return c
-}
-
-func finish_etcd_client(c *v3.Client) {
-	c.Close()
-}
-
-func perform_unlock(c *v3.Client, lock_name string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	s, err := concurrency.NewSession(c)
+	session, err := concurrency.NewSession(client)
 	if err != nil {
 		log.Fatal("couldn't init session:", err)
 	}
-	defer s.Close()
-	m := concurrency.NewMutex(s, "/distlock/"+lock_name)
-	if err := m.Unlock(ctx); err != nil {
+	mutex := concurrency.NewMutex(session, "/distlock/"+lock_name)
+	return client, session, mutex
+}
+
+func finish_etcd_client(client *v3.Client) {
+	client.Close()
+}
+
+func perform_unlock(mutex *concurrency.Mutex) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := mutex.Unlock(ctx); err != nil {
 		log.Fatal("couldn't free lock:", err)
 	}
 	cancel()
 	return
 }
 
-func perform_lock(c *v3.Client, lock_name string, reason string, timeout int) {
+func perform_lock(mutex *concurrency.Mutex, reason string, timeout int) {
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if timeout <= 0 {
@@ -51,13 +50,7 @@ func perform_lock(c *v3.Client, lock_name string, reason string, timeout int) {
 		ctx, cancel = context.WithTimeout(context.Background(),
 			time.Duration(timeout)*time.Second)
 	}
-	s, err := concurrency.NewSession(c)
-	if err != nil {
-		log.Fatal("couldn't init session:", err)
-	}
-	defer s.Close()
-	m := concurrency.NewMutex(s, "/distlock/"+lock_name)
-	if err := m.Lock(ctx); err != nil {
+	if err := mutex.Lock(ctx); err != nil {
 		log.Fatal("couldn't acquire lock:", err)
 	}
 	cancel()
@@ -125,20 +118,21 @@ func main() {
 		log.Fatal("Missing command to protect with lock")
 	}
 
-	c := init_etcd_client()
-	defer finish_etcd_client(c)
+	client, session, mutex := init_etcd_client(*lock_name)
+	defer session.Close()
+	defer finish_etcd_client(client)
 
 	if *op_unlock {
-		perform_unlock(c, *lock_name)
+		perform_unlock(mutex)
 		os.Exit(0)
 	} else {
-		perform_lock(c, *lock_name, *reason, *timeout)
+		perform_lock(mutex, *reason, *timeout)
 		if *op_lock {
 			/* we're done */
 			os.Exit(0)
 		} else {
 			rc := perform_command()
-			perform_unlock(c, *lock_name)
+			perform_unlock(mutex)
 			os.Exit(rc)
 		}
 	}
