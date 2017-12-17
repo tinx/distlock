@@ -39,19 +39,19 @@ func finish_etcd_client(client *v3.Client, session *concurrency.Session) {
 
 func acquire_state_lock(mutex *concurrency.Mutex) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if err := mutex.Lock(ctx); err != nil {
 		return err
 	}
-	cancel()
 	return nil
 }
 
 func release_state_lock(mutex *concurrency.Mutex) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if err := mutex.Unlock(ctx); err != nil {
 		return err
 	}
-	cancel()
 	return nil
 }
 
