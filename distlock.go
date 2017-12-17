@@ -139,6 +139,7 @@ again:
 				}
 			}
 		}
+		log.Fatal("timeout exceeded, giving up")
 	}
 	/* Step 3b: if it is free, lock it */
 	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
