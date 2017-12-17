@@ -27,7 +27,7 @@ func init_etcd_client() (*v3.Client, *concurrency.Session, *concurrency.Mutex) {
 	if err != nil {
 		log.Fatal("couldn't init session:", err)
 	}
-	mutex := concurrency.NewMutex(session, dl_prefix + dl_internal_lock)
+	mutex := concurrency.NewMutex(session, dl_prefix+dl_internal_lock)
 	return client, session, mutex
 }
 
