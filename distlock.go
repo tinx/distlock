@@ -5,6 +5,7 @@ import (
 	"flag"
 	v3 "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
+	"github.com/coreos/etcd/mvcc/mvccpb"
 	"log"
 	"os"
 	"os/exec"
@@ -55,39 +56,104 @@ func release_state_lock(mutex *concurrency.Mutex) error {
 }
 
 func perform_unlock(client *v3.Client, mutex *concurrency.Mutex, lock_name string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := mutex.Unlock(ctx); err != nil {
-		log.Fatal("couldn't free lock:", err)
+	var ctx context.Context
+	var cancel context.CancelFunc
+	lock_path := dl_prefix + lock_name
+	lock_reason := lock_path + "/reason"
+	lock_timestamp := lock_path + "/timestamp"
+
+	/* Step 1: get distlock internal state lcok */
+	if err := acquire_state_lock(mutex); err != nil {
+		log.Fatal("couldn't get state lock:", err)
+	}
+	/* Step 2: delete the reason */
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	if _, err := client.Delete(ctx, lock_reason); err != nil {
+		log.Fatal("error deleting reason:", err)
 	}
 	cancel()
+	/* Step 3: delete the timestamp (and thus, the free the lock) */
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	if _, err := client.Delete(ctx, lock_timestamp); err != nil {
+		log.Fatal("error releasing lock:", err)
+	}
+	cancel()
+	/* Step 4: unlock distlock internal state lock */
+	if err := release_state_lock(mutex); err != nil {
+		log.Fatal("error releasing state lock:", err)
+	}
 	return
 }
 
 func perform_lock(client *v3.Client, mutex *concurrency.Mutex, lock_name string, reason string, timeout int) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	lock_path := dl_prefix + lock_name
+	lock_reason := lock_path + "/reason"
+	lock_timestamp := lock_path + "/timestamp"
+	timeout_moment := time.Now().Add(time.Duration(timeout) * time.Second)
+
+	if lock_name == "__internal_lock" {
+		log.Fatal("illegal lock name: this name reserved")
+	}
+again:
 	/* Step 1: get distlock internal state lcok */
 	if err := acquire_state_lock(mutex); err != nil {
 		log.Fatal("couldn't get state lock:", err)
 	}
 	/* Step 2: verify that the requested distlock is free */
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	resp, err := client.Get(ctx, lock_timestamp)
+	cancel()
+	if err != nil {
+		log.Fatal("can't get lock data:", err)
+	}
 	/* Step 3a: if not, release internal state lock, set a watch and wait */
+	if len(resp.Kvs) > 0 {
+		/* lock entry exists, hence it is locked */
+		if timeout == 0 {
+			log.Fatal("resource locked.")
+		}
+		if timeout < 0 {
+			ctx, cancel = context.WithCancel(context.Background())
+		} else {
+			ctx, cancel = context.WithDeadline(context.Background(),
+				timeout_moment)
+		}
+		rch := client.Watch(ctx, lock_timestamp)
+		if err := release_state_lock(mutex); err != nil {
+			log.Fatal("error releasing state lock:", err)
+		}
+		for wresp := range rch {
+			if wresp.Canceled {
+				log.Fatal("timeout exceeded, giving up")
+			}
+			for _, ev := range wresp.Events {
+				if ev.Type == mvccpb.DELETE {
+					cancel()
+					goto again
+				}
+			}
+		}
+	}
 	/* Step 3b: if it is free, lock it */
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	_, err = client.Put(ctx, lock_timestamp, time.Now().String())
+	if err != nil {
+		log.Fatal("error setting lock:", err)
+	}
+	cancel()
 	/* Step 4: store the given reason */
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	_, err = client.Put(ctx, lock_reason, reason)
+	if err != nil {
+		log.Fatal("error setting lock:", err)
+	}
+	cancel()
 	/* Step 5: unlock distlock internal state lock */
 	if err := release_state_lock(mutex); err != nil {
 		log.Fatal("error releasing state lock:", err)
 	}
-	var ctx context.Context
-	var cancel context.CancelFunc
-	if timeout <= 0 {
-		ctx, cancel = context.WithCancel(context.Background())
-	} else {
-		ctx, cancel = context.WithTimeout(context.Background(),
-			time.Duration(timeout)*time.Second)
-	}
-	if err := mutex.Lock(ctx); err != nil {
-		log.Fatal("couldn't acquire lock:", err)
-	}
-	cancel()
 	return
 }
 
