@@ -127,6 +127,7 @@ again:
 		if err := release_state_lock(mutex); err != nil {
 			log.Fatal("error releasing state lock:", err)
 		}
+		/* wait for events until timeout or DELETE event occur */
 		for wresp := range rch {
 			if wresp.Canceled {
 				log.Fatal("timeout exceeded, giving up")
@@ -161,14 +162,17 @@ again:
 }
 
 func perform_command() int {
+	/* prepare arguments and input and output streams */
 	args := flag.Args()
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	/* launch command */
 	if err := cmd.Start(); err != nil {
 		log.Fatal("distlock: cmd execution failed: ", err)
 	}
+	/* figure out the command's exit code */
 	if err := cmd.Wait(); err != nil {
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			/* exiterr is now type asserted to be type ExitError */
@@ -187,8 +191,10 @@ func perform_command() int {
 }
 
 func main() {
+	/* disable timestamp and other extra data in our output */
 	log.SetFlags(0)
 
+	/* parse command line parameters */
 	lock_name := flag.String("lock-name", "",
 		"Name of the lock to operate on")
 	op_lock := flag.Bool("lock", false,
@@ -203,9 +209,9 @@ func main() {
 		"Max. no. of secs to wait for the lock")
 	endpoints := flag.String("endpoints", dl_endpoints,
 		"Comma-seperated list of etcd URLs")
-
 	flag.Parse()
 
+	/* verify and post-process command line parameters */
 	if *lock_name == "" {
 		log.Fatal("'lock-name' is a required option.")
 	}
@@ -227,9 +233,11 @@ func main() {
 	}
 	endpoint_list := strings.Split(*endpoints, ",")
 
+	/* connect to etcd cluster */
 	client, session, mutex := init_etcd_client(endpoint_list)
 	defer finish_etcd_client(client, session)
 
+	/* ready to go. what are we supposed to do? */
 	if *op_unlock {
 		perform_unlock(client, mutex, *lock_name)
 		os.Exit(0)
