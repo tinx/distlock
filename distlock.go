@@ -9,18 +9,19 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 )
 
 var dl_prefix string = "/distlock/"
 var dl_internal_lock string = "__internal_lock"
-var dl_endpoints []string = []string{"http://127.0.0.1:2379"}
+var dl_endpoints string = "http://127.0.0.1:2379"
 var dl_maxtime = 5 * time.Second
 
-func init_etcd_client() (*v3.Client, *concurrency.Session, *concurrency.Mutex) {
+func init_etcd_client(endpoints []string) (*v3.Client, *concurrency.Session, *concurrency.Mutex) {
 	client, err := v3.New(v3.Config{
-		Endpoints:   dl_endpoints,
+		Endpoints:   endpoints,
 		DialTimeout: dl_maxtime,
 	})
 	if err != nil {
@@ -200,6 +201,8 @@ func main() {
 		"Fail if the lock is busy")
 	timeout := flag.Int("timeout", -1,
 		"Max. no. of secs to wait for the lock")
+	endpoints := flag.String("endpoints", dl_endpoints,
+		"Comma-seperated list of etcd URLs")
 
 	flag.Parse()
 
@@ -222,8 +225,9 @@ func main() {
 	if !*op_lock && !*op_unlock && flag.NArg() == 0 {
 		log.Fatal("Missing command to protect with lock")
 	}
+	endpoint_list := strings.Split(*endpoints, ",")
 
-	client, session, mutex := init_etcd_client()
+	client, session, mutex := init_etcd_client(endpoint_list)
 	defer finish_etcd_client(client, session)
 
 	if *op_unlock {

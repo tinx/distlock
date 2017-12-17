@@ -28,6 +28,7 @@ useful at the same time.
 | `reason`    | Reason why we perform this operation. (ignored for --unlock) |
 | `nowait`    | When acquiring a lock, don't wait for it. Instead, fail immediately. (same as "-timeout=0") |
 | `timeout`   | Maximum amount of time in seconds to wait for a lock before failing. (default is "-1": wait indefinitely) |
+| `endpoints` | Comma-seperated list of etcd endpoint URLs. (default: "http://127.0.0.1:2379") |
 
 ## Usage Examples
 
