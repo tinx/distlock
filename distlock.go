@@ -15,11 +15,13 @@ import (
 
 var dl_prefix string = "/distlock/"
 var dl_internal_lock string = "__internal_lock"
+var dl_endpoints []string = []string{"http://127.0.0.1:2379"}
+var dl_maxtime = 5 * time.Second
 
 func init_etcd_client() (*v3.Client, *concurrency.Session, *concurrency.Mutex) {
 	client, err := v3.New(v3.Config{
-		Endpoints:   []string{"http://127.0.0.1:2379"},
-		DialTimeout: 5 * time.Second,
+		Endpoints:   dl_endpoints,
+		DialTimeout: dl_maxtime,
 	})
 	if err != nil {
 		log.Fatal("can't connect to etcd:", err)
@@ -38,7 +40,7 @@ func finish_etcd_client(client *v3.Client, session *concurrency.Session) {
 }
 
 func acquire_state_lock(mutex *concurrency.Mutex) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dl_maxtime)
 	defer cancel()
 	if err := mutex.Lock(ctx); err != nil {
 		return err
@@ -47,7 +49,7 @@ func acquire_state_lock(mutex *concurrency.Mutex) error {
 }
 
 func release_state_lock(mutex *concurrency.Mutex) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dl_maxtime)
 	defer cancel()
 	if err := mutex.Unlock(ctx); err != nil {
 		return err
@@ -67,13 +69,13 @@ func perform_unlock(client *v3.Client, mutex *concurrency.Mutex, lock_name strin
 		log.Fatal("couldn't get state lock:", err)
 	}
 	/* Step 2: delete the reason */
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
 	if _, err := client.Delete(ctx, lock_reason); err != nil {
 		log.Fatal("error deleting reason:", err)
 	}
 	cancel()
 	/* Step 3: delete the timestamp (and thus, the free the lock) */
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
 	if _, err := client.Delete(ctx, lock_timestamp); err != nil {
 		log.Fatal("error releasing lock:", err)
 	}
@@ -102,7 +104,7 @@ again:
 		log.Fatal("couldn't get state lock:", err)
 	}
 	/* Step 2: verify that the requested distlock is free */
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
 	resp, err := client.Get(ctx, lock_timestamp)
 	cancel()
 	if err != nil {
@@ -137,14 +139,14 @@ again:
 		}
 	}
 	/* Step 3b: if it is free, lock it */
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
 	_, err = client.Put(ctx, lock_timestamp, time.Now().String())
 	if err != nil {
 		log.Fatal("error setting lock:", err)
 	}
 	cancel()
 	/* Step 4: store the given reason */
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
 	_, err = client.Put(ctx, lock_reason, reason)
 	if err != nil {
 		log.Fatal("error setting lock:", err)
