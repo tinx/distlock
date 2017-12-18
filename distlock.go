@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	v3 "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -74,21 +76,29 @@ func perform_list(client *v3.Client, mutex *concurrency.Mutex) {
 	if err != nil {
 		log.Fatal("error retrieving lock list: ", err)
 	}
-	/* Step 3: print list */
+	/* Step 3: unlock distlock internal state lock */
+	if err := release_state_lock(mutex); err != nil {
+		log.Fatal("error releasing state lock: ", err)
+	}
+	/* Step 4: print list */
+	log.Print("Lock name            Since  Reason")
 	for _, ev := range resp.Kvs {
 		l := strings.TrimPrefix(string(ev.Key), dl_prefix)
-		v := strings.SplitN(l, "/", 2)
+		if strings.Contains(l, "/") {
+			continue
+		}
+		v := strings.SplitN(string(ev.Value), ";", 2)
 		if len(v) != 2 {
 			continue
 		}
-		if v[0] == dl_internal_lock {
-			continue
+		t, err := strconv.ParseInt(v[0], 10, 64)
+		if err != nil {
+			log.Fatal("internal error: unexpected value format")
 		}
-		log.Printf("%s: %s, %s", v[0], v[1], ev.Value)
-	}
-	/* Step 4: unlock distlock internal state lock */
-	if err := release_state_lock(mutex); err != nil {
-		log.Fatal("error releasing state lock: ", err)
+		now := time.Now().Unix()
+		duration := now - t
+		log.Printf("%-20s %2dm%02ds %s", l,
+			duration/60, duration%60, v[1])
 	}
 	return
 }
@@ -97,26 +107,18 @@ func perform_unlock(client *v3.Client, mutex *concurrency.Mutex, lock_name strin
 	var ctx context.Context
 	var cancel context.CancelFunc
 	lock_path := dl_prefix + lock_name
-	lock_reason := lock_path + "/reason"
-	lock_timestamp := lock_path + "/timestamp"
 
 	/* Step 1: get distlock internal state lcok */
 	if err := acquire_state_lock(mutex); err != nil {
 		log.Fatal("couldn't get state lock: ", err)
 	}
-	/* Step 2: delete the reason */
+	/* Step 2: delete the entry */
 	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
-	if _, err := client.Delete(ctx, lock_reason); err != nil {
-		log.Fatal("error deleting reason: ", err)
+	if _, err := client.Delete(ctx, lock_path); err != nil {
+		log.Fatal("error deleting lock entry: ", err)
 	}
 	cancel()
-	/* Step 3: delete the timestamp (and thus, the free the lock) */
-	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
-	if _, err := client.Delete(ctx, lock_timestamp); err != nil {
-		log.Fatal("error releasing lock: ", err)
-	}
-	cancel()
-	/* Step 4: unlock distlock internal state lock */
+	/* Step 3: unlock distlock internal state lock */
 	if err := release_state_lock(mutex); err != nil {
 		log.Fatal("error releasing state lock: ", err)
 	}
@@ -127,8 +129,6 @@ func perform_lock(client *v3.Client, mutex *concurrency.Mutex, lock_name string,
 	var ctx context.Context
 	var cancel context.CancelFunc
 	lock_path := dl_prefix + lock_name
-	lock_reason := lock_path + "/reason"
-	lock_timestamp := lock_path + "/timestamp"
 	timeout_moment := time.Now().Add(time.Duration(timeout) * time.Second)
 
 	if lock_name == "__internal_lock" {
@@ -141,7 +141,7 @@ again:
 	}
 	/* Step 2: verify that the requested distlock is free */
 	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
-	resp, err := client.Get(ctx, lock_timestamp)
+	resp, err := client.Get(ctx, lock_path)
 	cancel()
 	if err != nil {
 		log.Fatal("can't get lock data: ", err)
@@ -158,7 +158,7 @@ again:
 			ctx, cancel = context.WithDeadline(context.Background(),
 				timeout_moment)
 		}
-		rch := client.Watch(ctx, lock_timestamp)
+		rch := client.Watch(ctx, lock_path)
 		if err := release_state_lock(mutex); err != nil {
 			log.Fatal("error releasing state lock: ", err)
 		}
@@ -177,20 +177,14 @@ again:
 		log.Fatal("timeout exceeded, giving up")
 	}
 	/* Step 3b: if it is free, lock it */
+	entry := fmt.Sprintf("%d;%s", time.Now().Unix(), reason)
 	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
-	_, err = client.Put(ctx, lock_timestamp, time.Now().String())
+	_, err = client.Put(ctx, lock_path, entry)
 	if err != nil {
 		log.Fatal("error setting lock: ", err)
 	}
 	cancel()
-	/* Step 4: store the given reason */
-	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
-	_, err = client.Put(ctx, lock_reason, reason)
-	if err != nil {
-		log.Fatal("error setting lock: ", err)
-	}
-	cancel()
-	/* Step 5: unlock distlock internal state lock */
+	/* Step 4: unlock distlock internal state lock */
 	if err := release_state_lock(mutex); err != nil {
 		log.Fatal("error releasing state lock: ", err)
 	}
