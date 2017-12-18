@@ -58,6 +58,33 @@ func release_state_lock(mutex *concurrency.Mutex) error {
 	return nil
 }
 
+func perform_list(client *v3.Client, mutex *concurrency.Mutex) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+
+	/* Step 1: get distlock internal state lcok */
+	if err := acquire_state_lock(mutex); err != nil {
+		log.Fatal("couldn't get state lock: ", err)
+	}
+	/* Step 2: slurp in all entries */
+	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
+	resp, err := client.Get(ctx, dl_prefix, v3.WithPrefix(),
+		v3.WithSort(v3.SortByKey, v3.SortAscend))
+	cancel()
+	if err != nil {
+		log.Fatal("error retrieving lock list: ", err)
+	}
+	/* Step 3: print list */
+	for _, ev := range resp.Kvs {
+		log.Printf("%s : %s", ev.Key, ev.Value)
+	}
+	/* Step 4: unlock distlock internal state lock */
+	if err := release_state_lock(mutex); err != nil {
+		log.Fatal("error releasing state lock: ", err)
+	}
+	return
+}
+
 func perform_unlock(client *v3.Client, mutex *concurrency.Mutex, lock_name string) {
 	var ctx context.Context
 	var cancel context.CancelFunc
@@ -202,6 +229,8 @@ func main() {
 		"Acquire lock and exit")
 	op_unlock := flag.Bool("unlock", false,
 		"Release lock and exit")
+	op_list := flag.Bool("list", false,
+		"Print a list of distlocks currently in use and exit")
 	reason := flag.String("reason", "",
 		"Reason why we perform this operation")
 	no_wait := flag.Bool("nowait", false,
@@ -213,7 +242,7 @@ func main() {
 	flag.Parse()
 
 	/* verify and post-process command line parameters */
-	if *lock_name == "" {
+	if !*op_list && *lock_name == "" {
 		log.Fatal("'lock-name' is a required option.")
 	}
 	if *op_lock && *op_unlock {
@@ -229,7 +258,7 @@ func main() {
 			*timeout = 0
 		}
 	}
-	if !*op_lock && !*op_unlock && flag.NArg() == 0 {
+	if !*op_list && !*op_lock && !*op_unlock && flag.NArg() == 0 {
 		log.Fatal("Missing command to protect with lock")
 	}
 	endpoint_list := strings.Split(*endpoints, ",")
@@ -239,7 +268,10 @@ func main() {
 	defer finish_etcd_client(client, session)
 
 	/* ready to go. what are we supposed to do? */
-	if *op_unlock {
+	if *op_list {
+		perform_list(client, mutex)
+		os.Exit(0)
+	} else if *op_unlock {
 		perform_unlock(client, mutex, *lock_name)
 		os.Exit(0)
 	} else {
