@@ -76,7 +76,15 @@ func perform_list(client *v3.Client, mutex *concurrency.Mutex) {
 	}
 	/* Step 3: print list */
 	for _, ev := range resp.Kvs {
-		log.Printf("%s : %s", ev.Key, ev.Value)
+		l := strings.TrimPrefix(string(ev.Key), dl_prefix)
+		v := strings.SplitN(l, "/", 2)
+		if len(v) != 2 {
+			continue
+		}
+		if v[0] == dl_internal_lock {
+			continue
+		}
+		log.Printf("%s: %s, %s", v[0], v[1], ev.Value)
 	}
 	/* Step 4: unlock distlock internal state lock */
 	if err := release_state_lock(mutex); err != nil {
@@ -244,6 +252,9 @@ func main() {
 	/* verify and post-process command line parameters */
 	if !*op_list && *lock_name == "" {
 		log.Fatal("'lock-name' is a required option.")
+	}
+	if strings.Contains(*lock_name, "/") {
+		log.Fatal("illegal character in lock name")
 	}
 	if *op_lock && *op_unlock {
 		log.Fatal("Can't give both 'lock' and 'unlock' options.")
