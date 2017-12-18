@@ -250,8 +250,8 @@ func main() {
 	if strings.Contains(*lock_name, "/") {
 		log.Fatal("illegal character in lock name")
 	}
-	if *op_lock && *op_unlock {
-		log.Fatal("Can't give both 'lock' and 'unlock' options.")
+	if (*op_list && (*op_lock || *op_unlock)) || (*op_lock && *op_unlock) {
+		log.Fatal("'lock', 'unlock' and 'list' are mutually exclusive.")
 	}
 	if (*op_lock || *op_unlock) && flag.NArg() > 0 {
 		log.Fatal("Program args given, but would not execute.")
