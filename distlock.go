@@ -81,14 +81,14 @@ func perform_list(client *v3.Client, mutex *concurrency.Mutex) {
 		log.Fatal("error releasing state lock: ", err)
 	}
 	/* Step 4: print list */
-	log.Print("Lock name            Since  Reason")
+	log.Print("Lock name       Hostname        Since  Reason")
 	for _, ev := range resp.Kvs {
 		l := strings.TrimPrefix(string(ev.Key), dl_prefix)
 		if strings.Contains(l, "/") {
 			continue
 		}
-		v := strings.SplitN(string(ev.Value), ";", 2)
-		if len(v) != 2 {
+		v := strings.SplitN(string(ev.Value), ";", 3)
+		if len(v) != 3 {
 			continue
 		}
 		t, err := strconv.ParseInt(v[0], 10, 64)
@@ -97,8 +97,8 @@ func perform_list(client *v3.Client, mutex *concurrency.Mutex) {
 		}
 		now := time.Now().Unix()
 		duration := now - t
-		log.Printf("%-20s %2dm%02ds %s", l,
-			duration/60, duration%60, v[1])
+		log.Printf("%-15s %-15s %2dm%02ds %s", l, v[1],
+			duration/60, duration%60, v[2])
 	}
 	return
 }
@@ -177,7 +177,11 @@ again:
 		log.Fatal("timeout exceeded, giving up")
 	}
 	/* Step 3b: if it is free, lock it */
-	entry := fmt.Sprintf("%d;%s", time.Now().Unix(), reason)
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal("error getting hostname: ", err)
+	}
+	entry := fmt.Sprintf("%d;%s;%s", time.Now().Unix(), hostname, reason)
 	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
 	_, err = client.Put(ctx, lock_path, entry)
 	if err != nil {
