@@ -228,8 +228,34 @@ func main() {
 	/* disable timestamp and other extra data in our output */
 	log.SetFlags(0)
 
+	/* establish defaults */
+
+	lock_name := ""
+	reason := ""
+	endpoints := dl_endpoints
+	timeout := -1
+
+	/* look for environment variables to override defaults */
+	if os.Getenv("DISTLOCK_LOCKNAME") != "" {
+		lock_name = os.Getenv("DISTLOCK_LOCKNAME")
+	}
+	if os.Getenv("DISTLOCK_REASON") != "" {
+		reason = os.Getenv("DISTLOCK_REASON")
+	}
+	if os.Getenv("DISTLOCK_ENDPOINTS") != "" {
+		endpoints = os.Getenv("DISTLOCK_ENDPOINTS")
+	}
+	if os.Getenv("DISTLOCK_TIMEOUT") != "" {
+		to := os.Getenv("DISTLOCK_TIMEOUT")
+		t, err := strconv.ParseInt(to, 10, 64)
+		if err != nil {
+			log.Fatal("unexpected timeout format in environment")
+		}
+		timeout = int(t)
+	}
+
 	/* parse command line parameters */
-	lock_name := flag.String("lock-name", "",
+	flag.StringVar(&lock_name, "lock-name", lock_name,
 		"Name of the lock to operate on")
 	op_lock := flag.Bool("lock", false,
 		"Acquire lock and exit")
@@ -237,21 +263,23 @@ func main() {
 		"Release lock and exit")
 	op_list := flag.Bool("list", false,
 		"Print a list of distlocks currently in use and exit")
-	reason := flag.String("reason", "",
+	flag.StringVar(&reason, "reason", reason,
 		"Reason why we perform this operation")
 	no_wait := flag.Bool("nowait", false,
 		"Fail if the lock is busy")
-	timeout := flag.Int("timeout", -1,
+	flag.IntVar(&timeout, "timeout", timeout,
 		"Max. no. of secs to wait for the lock")
-	endpoints := flag.String("endpoints", dl_endpoints,
+	flag.StringVar(&endpoints, "endpoints", endpoints,
 		"Comma-seperated list of etcd URLs")
 	flag.Parse()
 
+	log.Print(lock_name)
+
 	/* verify and post-process command line parameters */
-	if !*op_list && *lock_name == "" {
+	if !*op_list && lock_name == "" {
 		log.Fatal("'lock-name' is a required option.")
 	}
-	if strings.Contains(*lock_name, "/") {
+	if strings.Contains(lock_name, "/") {
 		log.Fatal("illegal character in lock name")
 	}
 	if (*op_list && (*op_lock || *op_unlock)) || (*op_lock && *op_unlock) {
@@ -261,16 +289,16 @@ func main() {
 		log.Fatal("Program args given, but would not execute.")
 	}
 	if *no_wait {
-		if *timeout > 0 {
+		if timeout > 0 {
 			log.Fatal("Conflicting options -nowait and -timeout.")
 		} else {
-			*timeout = 0
+			timeout = 0
 		}
 	}
 	if !*op_list && !*op_lock && !*op_unlock && flag.NArg() == 0 {
 		log.Fatal("Missing command to protect with lock")
 	}
-	endpoint_list := strings.Split(*endpoints, ",")
+	endpoint_list := strings.Split(endpoints, ",")
 
 	/* connect to etcd cluster */
 	client, session, mutex := init_etcd_client(endpoint_list)
@@ -281,16 +309,16 @@ func main() {
 		perform_list(client, mutex)
 		os.Exit(0)
 	} else if *op_unlock {
-		perform_unlock(client, mutex, *lock_name)
+		perform_unlock(client, mutex, lock_name)
 		os.Exit(0)
 	} else {
-		perform_lock(client, mutex, *lock_name, *reason, *timeout)
+		perform_lock(client, mutex, lock_name, reason, timeout)
 		if *op_lock {
 			/* we're done */
 			os.Exit(0)
 		} else {
 			rc := perform_command()
-			perform_unlock(client, mutex, *lock_name)
+			perform_unlock(client, mutex, lock_name)
 			os.Exit(rc)
 		}
 	}
