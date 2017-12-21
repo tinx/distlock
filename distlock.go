@@ -234,6 +234,7 @@ func main() {
 	reason := ""
 	endpoints := dl_endpoints
 	timeout := -1
+	prefix := dl_prefix
 
 	/* look for environment variables to override defaults */
 	if os.Getenv("DISTLOCK_LOCKNAME") != "" {
@@ -253,6 +254,10 @@ func main() {
 		}
 		timeout = int(t)
 	}
+	if os.Getenv("DISTLOCK_PREFIX") != "" {
+		prefix = os.Getenv("DISTLOCK_PREFIX")
+	}
+	dl_prefix = prefix
 
 	/* parse command line parameters */
 	flag.StringVar(&lock_name, "lock-name", lock_name,
