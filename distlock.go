@@ -278,8 +278,6 @@ func main() {
 		"Comma-seperated list of etcd URLs")
 	flag.Parse()
 
-	log.Print(lock_name)
-
 	/* verify and post-process command line parameters */
 	if !*op_list && lock_name == "" {
 		log.Fatal("'lock-name' is a required option.")
