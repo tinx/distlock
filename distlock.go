@@ -16,15 +16,29 @@ import (
 	"time"
 )
 
-var dl_prefix string = "/distlock/"
-var dl_internal_lock string = "__internal_lock"
-var dl_endpoints string = "http://127.0.0.1:2379"
-var dl_maxtime = 5 * time.Second
+type distlock_config_t struct {
+	lock_name     string
+	reason        string
+	endpoints     []string
+	timeout       int
+	prefix        string
+	internal_lock string
+	maxtime       time.Duration
+}
+
+var config = distlock_config_t{
+	lock_name:     "",
+	reason:        "",
+	endpoints:     []string{"http://127.0.0.1:2379"},
+	timeout:       -1,
+	prefix:        "/distlock/",
+	internal_lock: "__internal_lock",
+	maxtime:       5 * time.Second}
 
 func init_etcd_client(endpoints []string) (*v3.Client, *concurrency.Session, *concurrency.Mutex) {
 	client, err := v3.New(v3.Config{
 		Endpoints:   endpoints,
-		DialTimeout: dl_maxtime,
+		DialTimeout: config.maxtime,
 	})
 	if err != nil {
 		log.Fatal("can't connect to etcd: ", err)
@@ -33,7 +47,8 @@ func init_etcd_client(endpoints []string) (*v3.Client, *concurrency.Session, *co
 	if err != nil {
 		log.Fatal("couldn't init session: ", err)
 	}
-	mutex := concurrency.NewMutex(session, dl_prefix+dl_internal_lock)
+	mutex := concurrency.NewMutex(session,
+		config.prefix+config.internal_lock)
 	return client, session, mutex
 }
 
@@ -43,7 +58,7 @@ func finish_etcd_client(client *v3.Client, session *concurrency.Session) {
 }
 
 func acquire_state_lock(mutex *concurrency.Mutex) error {
-	ctx, cancel := context.WithTimeout(context.Background(), dl_maxtime)
+	ctx, cancel := context.WithTimeout(context.Background(), config.maxtime)
 	defer cancel()
 	if err := mutex.Lock(ctx); err != nil {
 		return err
@@ -52,7 +67,7 @@ func acquire_state_lock(mutex *concurrency.Mutex) error {
 }
 
 func release_state_lock(mutex *concurrency.Mutex) error {
-	ctx, cancel := context.WithTimeout(context.Background(), dl_maxtime)
+	ctx, cancel := context.WithTimeout(context.Background(), config.maxtime)
 	defer cancel()
 	if err := mutex.Unlock(ctx); err != nil {
 		return err
@@ -69,8 +84,8 @@ func perform_list(client *v3.Client, mutex *concurrency.Mutex) {
 		log.Fatal("couldn't get state lock: ", err)
 	}
 	/* Step 2: slurp in all entries */
-	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
-	resp, err := client.Get(ctx, dl_prefix, v3.WithPrefix(),
+	ctx, cancel = context.WithTimeout(context.Background(), config.maxtime)
+	resp, err := client.Get(ctx, config.prefix, v3.WithPrefix(),
 		v3.WithSort(v3.SortByKey, v3.SortAscend))
 	cancel()
 	if err != nil {
@@ -83,7 +98,7 @@ func perform_list(client *v3.Client, mutex *concurrency.Mutex) {
 	/* Step 4: print list */
 	log.Print("Lock name       Hostname        Since  Reason")
 	for _, ev := range resp.Kvs {
-		l := strings.TrimPrefix(string(ev.Key), dl_prefix)
+		l := strings.TrimPrefix(string(ev.Key), config.prefix)
 		if strings.Contains(l, "/") {
 			continue
 		}
@@ -106,14 +121,14 @@ func perform_list(client *v3.Client, mutex *concurrency.Mutex) {
 func perform_unlock(client *v3.Client, mutex *concurrency.Mutex, lock_name string) {
 	var ctx context.Context
 	var cancel context.CancelFunc
-	lock_path := dl_prefix + lock_name
+	lock_path := config.prefix + lock_name
 
 	/* Step 1: get distlock internal state lcok */
 	if err := acquire_state_lock(mutex); err != nil {
 		log.Fatal("couldn't get state lock: ", err)
 	}
 	/* Step 2: delete the entry */
-	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
+	ctx, cancel = context.WithTimeout(context.Background(), config.maxtime)
 	if _, err := client.Delete(ctx, lock_path); err != nil {
 		log.Fatal("error deleting lock entry: ", err)
 	}
@@ -128,7 +143,7 @@ func perform_unlock(client *v3.Client, mutex *concurrency.Mutex, lock_name strin
 func perform_lock(client *v3.Client, mutex *concurrency.Mutex, lock_name string, reason string, timeout int) {
 	var ctx context.Context
 	var cancel context.CancelFunc
-	lock_path := dl_prefix + lock_name
+	lock_path := config.prefix + lock_name
 	timeout_moment := time.Now().Add(time.Duration(timeout) * time.Second)
 
 	if lock_name == "__internal_lock" {
@@ -140,7 +155,7 @@ again:
 		log.Fatal("couldn't get state lock: ", err)
 	}
 	/* Step 2: verify that the requested distlock is free */
-	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
+	ctx, cancel = context.WithTimeout(context.Background(), config.maxtime)
 	resp, err := client.Get(ctx, lock_path)
 	cancel()
 	if err != nil {
@@ -182,7 +197,7 @@ again:
 		log.Fatal("error getting hostname: ", err)
 	}
 	entry := fmt.Sprintf("%d;%s;%s", time.Now().Unix(), hostname, reason)
-	ctx, cancel = context.WithTimeout(context.Background(), dl_maxtime)
+	ctx, cancel = context.WithTimeout(context.Background(), config.maxtime)
 	_, err = client.Put(ctx, lock_path, entry)
 	if err != nil {
 		log.Fatal("error setting lock: ", err)
@@ -228,23 +243,16 @@ func main() {
 	/* disable timestamp and other extra data in our output */
 	log.SetFlags(0)
 
-	/* establish defaults */
-
-	lock_name := ""
-	reason := ""
-	endpoints := dl_endpoints
-	timeout := -1
-	prefix := dl_prefix
-
 	/* look for environment variables to override defaults */
 	if os.Getenv("DISTLOCK_LOCKNAME") != "" {
-		lock_name = os.Getenv("DISTLOCK_LOCKNAME")
+		config.lock_name = os.Getenv("DISTLOCK_LOCKNAME")
 	}
 	if os.Getenv("DISTLOCK_REASON") != "" {
-		reason = os.Getenv("DISTLOCK_REASON")
+		config.reason = os.Getenv("DISTLOCK_REASON")
 	}
 	if os.Getenv("DISTLOCK_ENDPOINTS") != "" {
-		endpoints = os.Getenv("DISTLOCK_ENDPOINTS")
+		ep := strings.Split(os.Getenv("DISTLOCK_ENDPOINTS"), ",")
+		config.endpoints = ep
 	}
 	if os.Getenv("DISTLOCK_TIMEOUT") != "" {
 		to := os.Getenv("DISTLOCK_TIMEOUT")
@@ -252,15 +260,14 @@ func main() {
 		if err != nil {
 			log.Fatal("unexpected timeout format in environment")
 		}
-		timeout = int(t)
+		config.timeout = int(t)
 	}
 	if os.Getenv("DISTLOCK_PREFIX") != "" {
-		prefix = os.Getenv("DISTLOCK_PREFIX")
+		config.prefix = os.Getenv("DISTLOCK_PREFIX")
 	}
-	dl_prefix = prefix
 
 	/* parse command line parameters */
-	flag.StringVar(&lock_name, "lock-name", lock_name,
+	flag.StringVar(&config.lock_name, "lock-name", config.lock_name,
 		"Name of the lock to operate on")
 	op_lock := flag.Bool("lock", false,
 		"Acquire lock and exit")
@@ -268,21 +275,22 @@ func main() {
 		"Release lock and exit")
 	op_list := flag.Bool("list", false,
 		"Print a list of distlocks currently in use and exit")
-	flag.StringVar(&reason, "reason", reason,
+	flag.StringVar(&config.reason, "reason", config.reason,
 		"Reason why we perform this operation")
 	no_wait := flag.Bool("nowait", false,
 		"Fail if the lock is busy")
-	flag.IntVar(&timeout, "timeout", timeout,
+	flag.IntVar(&config.timeout, "timeout", config.timeout,
 		"Max. no. of secs to wait for the lock")
-	flag.StringVar(&endpoints, "endpoints", endpoints,
+	var endpoints string
+	flag.StringVar(&endpoints, "endpoints", "",
 		"Comma-seperated list of etcd URLs")
 	flag.Parse()
 
 	/* verify and post-process command line parameters */
-	if !*op_list && lock_name == "" {
+	if !*op_list && config.lock_name == "" {
 		log.Fatal("'lock-name' is a required option.")
 	}
-	if strings.Contains(lock_name, "/") {
+	if strings.Contains(config.lock_name, "/") {
 		log.Fatal("illegal character in lock name")
 	}
 	if (*op_list && (*op_lock || *op_unlock)) || (*op_lock && *op_unlock) {
@@ -292,19 +300,22 @@ func main() {
 		log.Fatal("Program args given, but would not execute.")
 	}
 	if *no_wait {
-		if timeout > 0 {
+		if config.timeout > 0 {
 			log.Fatal("Conflicting options -nowait and -timeout.")
 		} else {
-			timeout = 0
+			config.timeout = 0
 		}
 	}
 	if !*op_list && !*op_lock && !*op_unlock && flag.NArg() == 0 {
 		log.Fatal("Missing command to protect with lock")
 	}
-	endpoint_list := strings.Split(endpoints, ",")
+	if endpoints != "" {
+		ep := strings.Split(endpoints, ",")
+		config.endpoints = ep
+	}
 
 	/* connect to etcd cluster */
-	client, session, mutex := init_etcd_client(endpoint_list)
+	client, session, mutex := init_etcd_client(config.endpoints)
 	defer finish_etcd_client(client, session)
 
 	/* ready to go. what are we supposed to do? */
@@ -312,16 +323,17 @@ func main() {
 		perform_list(client, mutex)
 		os.Exit(0)
 	} else if *op_unlock {
-		perform_unlock(client, mutex, lock_name)
+		perform_unlock(client, mutex, config.lock_name)
 		os.Exit(0)
 	} else {
-		perform_lock(client, mutex, lock_name, reason, timeout)
+		perform_lock(client, mutex,
+			config.lock_name, config.reason, config.timeout)
 		if *op_lock {
 			/* we're done */
 			os.Exit(0)
 		} else {
 			rc := perform_command()
-			perform_unlock(client, mutex, lock_name)
+			perform_unlock(client, mutex, config.lock_name)
 			os.Exit(rc)
 		}
 	}
