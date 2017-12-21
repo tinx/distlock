@@ -73,6 +73,13 @@ node2 $ distlock --lock-name=foo --unlock   # works
 
 ## Building from Source
 
+```sh
+git clone https://github.com/tinx/distlock
+cd distlock
+go get ./...
+go build
+```
+
 ## Testing
 
 ## Contributing
