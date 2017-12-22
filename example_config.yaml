@@ -1,0 +1,6 @@
+---
+prefix: /distlock_prod/
+endpoints:
+  - https://etcd1.prod:2379/
+  - https://etcd2.prod:2379/
+  - https://etcd3.prod:2379/
