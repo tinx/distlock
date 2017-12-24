@@ -151,13 +151,17 @@ func perform_unlock(client *v3.Client, mutex *concurrency.Mutex, lock_name strin
 	}
 	/* Step 2: delete the entry */
 	ctx, cancel = context.WithTimeout(context.Background(), config.Maxtime)
-	if _, err := client.Delete(ctx, lock_path); err != nil {
+	resp, err := client.Delete(ctx, lock_path)
+	if err != nil {
 		log.Fatal("error deleting lock entry: ", err)
 	}
 	cancel()
 	/* Step 3: unlock distlock internal state lock */
-	if err := release_state_lock(mutex); err != nil {
+	if err = release_state_lock(mutex); err != nil {
 		log.Fatal("error releasing state lock: ", err)
+	}
+	if resp.Deleted <= 0 {
+		log.Fatal("error unlocking lock: lock not found")
 	}
 	return
 }
