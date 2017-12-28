@@ -1,13 +1,13 @@
 # distlock
 
-distlock is a command line utility for distributed locking, such that
+`distlock` is a command line utility for distributed locking, such that
 no two systems can acquire the same lock in the same locking domain
 at the same time. distlock is written in Go and uses
 [*etcd*](https://github.com/coreos/etcd) as a backend.
 
 ## Why?
 
-distlock was developed as an orchestration tool for cluster management.
+`distlock` was developed as an orchestration tool for cluster management.
 The configuration management tool would call distlock to acquire a
 lock before performing any state changing updates on cluster nodes.
 In Puppet and Salt this would have the desired effect of failing the
@@ -15,7 +15,7 @@ run while another node was being worked on, so that subsequent runs
 would try to perform the operation again. Hence, only one cluster
 node would be updated at the same time.
 
-distlock was also started so that I could learn Go while doing something
+`distlock` was also started so that I could learn Go while doing something
 useful at the same time.
 
 ## Options
@@ -29,6 +29,17 @@ useful at the same time.
 | `nowait`    | When acquiring a lock, don't wait for it. Instead, fail immediately. (same as "-timeout=0") |
 | `timeout`   | Maximum amount of time in seconds to wait for a lock before failing. (default is "-1": wait indefinitely) |
 | `endpoints` | Comma-seperated list of etcd endpoint URLs. (default: "http://127.0.0.1:2379") |
+
+## Environment
+
+`distlock` recognizes the following environment vairables:
+
+ - `DISTLOCK_LOCKNAME` is equivalent to `--lock-name`
+ - `DISTLOCK_REASON` is equivalent to `--reason`
+ - `DISTLOCK_ENDPOINTS` is equivalent to `--endpoints`
+ - `DISTLOCK_TIMEOUT` is equivalent to `--timeout`
+ - `DISTLOCK_PREFIX` controls which internal prefix `distlock` will use when sotring data in etcd. This can be useful if you want multiple 'distlock realms' using the same etcd cluster, for example one for staging and one for testing. The default prefix is `/distlock/`
+ - `DISTLOCK_CONFIG` control which config file to read on startup. The default is `/etc/distlock/distlock.yaml`
 
 ## Usage Examples
 
