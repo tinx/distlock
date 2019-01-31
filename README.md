@@ -38,7 +38,7 @@ useful at the same time.
  - `DISTLOCK_REASON` is equivalent to `--reason`
  - `DISTLOCK_ENDPOINTS` is equivalent to `--endpoints`
  - `DISTLOCK_TIMEOUT` is equivalent to `--timeout`
- - `DISTLOCK_PREFIX` controls which internal prefix `distlock` will use when sotring data in etcd. This can be useful if you want multiple 'distlock realms' using the same etcd cluster, for example one for staging and one for testing. The default prefix is `/distlock/`
+ - `DISTLOCK_PREFIX` controls which internal prefix `distlock` will use when storing data in etcd. This can be useful if you want multiple 'distlock realms' using the same etcd cluster, for example one for staging and one for testing. The default prefix is `/distlock/`
  - `DISTLOCK_CONFIG` control which config file to read on startup. The default is `/etc/distlock/distlock.yaml`
 
 ## Usage Examples
